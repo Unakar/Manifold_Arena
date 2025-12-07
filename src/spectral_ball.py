@@ -8,7 +8,7 @@ The key difference from Stiefel manifold methods (manifold_muon):
 - Stiefel manifold: constrains all singular values to be 1 (orthogonal matrices)
 
 Algorithm:
-1. Power iteration to compute σ (spectral norm) and top singular vectors (u, v)
+1. SVD to compute σ (spectral norm) and top singular vectors (u, v)
 2. Retract W to spectral sphere: W ← (R/σ) * W
 3. Form rank-1 matrix Θ = u @ v^T (pointing in top singular direction)
 4. Solve for λ: <Θ, msign(G + λΘ)> = 0 using bisection
@@ -23,12 +23,11 @@ from msign import msign
 
 
 @torch.no_grad()
-def power_iteration(W: torch.Tensor, steps: int = 50, eps: float = 1e-20):
-    """Compute leading singular triplet (σ, u, v) via bilateral power iteration.
+def svd_spectral_norm(W: torch.Tensor, eps: float = 1e-20):
+    """Compute leading singular triplet (σ, u, v) via SVD.
 
     Args:
         W: Weight matrix of shape (m, n)
-        steps: Number of power iteration steps
         eps: Small constant for numerical stability
 
     Returns:
@@ -36,22 +35,17 @@ def power_iteration(W: torch.Tensor, steps: int = 50, eps: float = 1e-20):
         u: Left singular vector of shape (m, 1)
         v: Right singular vector of shape (n, 1)
     """
-    # Initialize v randomly
-    v = torch.ones(W.shape[1], 1, dtype=W.dtype, device=W.device)
+    # Compute SVD: W = U @ diag(S) @ V^T
+    U, S, Vh = torch.linalg.svd(W, full_matrices=False)
 
-    # Power iteration
-    for _ in range(steps):
-        # v ← W^T @ (W @ v) / ||W^T @ (W @ v)||
-        Wv = W @ v
-        v = W.T @ Wv
-        v = v / (v.norm() + eps)
+    # Leading singular value
+    sigma = S[0].item()
 
-    # Compute u and σ
-    u = W @ v
-    sigma = u.norm()
-    u = u / (sigma + eps)
+    # Leading singular vectors (as column vectors)
+    u = U[:, 0:1]  # shape (m, 1)
+    v = Vh[0:1, :].T  # shape (n, 1), note: Vh is already transposed
 
-    return sigma.item(), u, v
+    return sigma, u, v
 
 
 @torch.no_grad()
@@ -160,7 +154,6 @@ def spectral_ball(
     G: torch.Tensor,
     eta: float = 0.1,
     radius_mode: str = "spectral_mup",
-    power_iter_steps: int = 50,
     msign_steps: int = 10,
     lambda_tolerance: float = 1e-6,
     lambda_max_iter: int = 20,
@@ -170,7 +163,7 @@ def spectral_ball(
     Performs optimization on the spectral ball manifold: {W : ||W||_2 = R}.
 
     Algorithm:
-    1. Power iteration: compute σ, u, v
+    1. SVD: compute σ, u, v
     2. Retract to spectral sphere: W ← (R/σ) * W
     3. Form Θ = u @ v^T
     4. Solve λ: <Θ, msign(G + λΘ)> = 0
@@ -182,7 +175,6 @@ def spectral_ball(
         G: Gradient tensor
         eta: Learning rate
         radius_mode: Target radius mode ("spectral_mup" or "identity")
-        power_iter_steps: Number of power iteration steps
         msign_steps: Number of msign iteration steps
         lambda_tolerance: Convergence tolerance for λ solver
         lambda_max_iter: Maximum iterations for λ solver
@@ -205,8 +197,8 @@ def spectral_ball(
     else:
         raise ValueError(f"Invalid radius_mode: {radius_mode}")
 
-    # Step 1: Power iteration to get σ, u, v
-    sigma, u, v = power_iteration(W, steps=power_iter_steps)
+    # Step 1: SVD to get σ, u, v
+    sigma, u, v = svd_spectral_norm(W)
 
     # Step 2: Retract W to spectral sphere
     if sigma > 1e-8:
@@ -235,7 +227,7 @@ def spectral_ball(
     new_W = W - eta * A
 
     # Retract to spectral sphere
-    sigma_new, _, _ = power_iteration(new_W, steps=power_iter_steps)
+    sigma_new, _, _ = svd_spectral_norm(new_W)
     if sigma_new > 1e-8:
         new_W.mul_(R / sigma_new)
 

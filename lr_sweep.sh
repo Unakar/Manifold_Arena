@@ -8,7 +8,7 @@ set -e  # Exit on error
 # Default settings
 EPOCHS=10
 SEED=42
-LR_VALUES=(0.001  0.01 0.1 1.0)
+LR_VALUES=(0.001 0.005 0.01 0.05 0.1 0.5 1.0)
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
