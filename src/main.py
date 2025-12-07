@@ -84,30 +84,60 @@ def spectral_mup_init_method_normal(sigma=0.02):
     return init_
 
 
-class MLP(nn.Module):
-    def __init__(self, use_spectral_mup_init=True):
-        super(MLP, self).__init__()
-        self.fc1 = nn.Linear(32 * 32 * 3, 128, bias=False)
-        self.fc2 = nn.Linear(128, 64, bias=False)
-        self.fc3 = nn.Linear(64, 10, bias=False)
+class ResidualBlock(nn.Module):
+    """Residual block with two linear layers."""
+    def __init__(self, dim, use_spectral_mup_init=True):
+        super(ResidualBlock, self).__init__()
+        self.fc1 = nn.Linear(dim, dim, bias=False)
+        self.fc2 = nn.Linear(dim, dim, bias=False)
 
-        # Apply spectral MuP initialization to all layers
         if use_spectral_mup_init:
             init_fn = spectral_mup_init_method_normal(sigma=0.02)
             init_fn(self.fc1.weight)
             init_fn(self.fc2.weight)
-            init_fn(self.fc3.weight)
+
+    def forward(self, x):
+        residual = x
+        out = torch.relu(self.fc1(x))
+        out = self.fc2(out)
+        out = out + residual  # Residual connection
+        out = torch.relu(out)
+        return out
+
+
+class ResNet5(nn.Module):
+    """5-layer ResNet: 1 input layer + 3 residual blocks + 1 output layer."""
+    def __init__(self, hidden_dim=256, use_spectral_mup_init=True):
+        super(ResNet5, self).__init__()
+        # Input layer
+        self.fc_in = nn.Linear(32 * 32 * 3, hidden_dim, bias=False)
+
+        # 3 residual blocks (each has 2 linear layers)
+        self.res_block1 = ResidualBlock(hidden_dim, use_spectral_mup_init)
+        self.res_block2 = ResidualBlock(hidden_dim, use_spectral_mup_init)
+        self.res_block3 = ResidualBlock(hidden_dim, use_spectral_mup_init)
+
+        # Output layer
+        self.fc_out = nn.Linear(hidden_dim, 10, bias=False)
+
+        # Apply spectral MuP initialization to input and output layers
+        if use_spectral_mup_init:
+            init_fn = spectral_mup_init_method_normal(sigma=0.02)
+            init_fn(self.fc_in.weight)
+            init_fn(self.fc_out.weight)
 
     def forward(self, x):
         x = x.view(-1, 32 * 32 * 3)
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        x = self.fc3(x)
+        x = torch.relu(self.fc_in(x))
+        x = self.res_block1(x)
+        x = self.res_block2(x)
+        x = self.res_block3(x)
+        x = self.fc_out(x)
         return x
 
 
 def train(epochs, initial_lr, update, wd, use_mup_lr=True):
-    model = MLP().cuda()
+    model = ResNet5(hidden_dim=256).cuda()
     criterion = nn.CrossEntropyLoss()
 
     if update == AdamW:

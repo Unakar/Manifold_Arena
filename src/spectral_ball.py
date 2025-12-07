@@ -74,7 +74,7 @@ def solve_lambda_bisection(
     G: torch.Tensor,
     Theta: torch.Tensor,
     initial_step: float = 1e-3,
-    tolerance: float = 1e-6,
+    tolerance: float = 1e-5,
     max_iterations: int = 20,
     max_expansions: int = 10,
     msign_steps: int = 10,
@@ -225,11 +225,6 @@ def spectral_ball(
 
     # Step 6: Update and retract
     new_W = W - eta * A
-
-    # Retract to spectral sphere
-    sigma_new, _, _ = svd_spectral_norm(new_W)
-    if sigma_new > 1e-8:
-        new_W.mul_(R / sigma_new)
 
     # Restore shape if transposed
     return new_W.T if should_transpose else new_W

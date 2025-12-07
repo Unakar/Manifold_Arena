@@ -8,7 +8,7 @@ set -e  # Exit on error
 # Default settings
 EPOCHS=10
 SEED=42
-LR_VALUES=(0.001 0.005 0.01 0.05 0.1 0.5 1.0)
+LR_VALUES=(0.001 0.005 0.01 0.05 0.1 0.5 1.0 10)
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -36,30 +36,47 @@ echo "================================================"
 
 cd src
 
-# Run experiments for each learning rate
-for lr in "${LR_VALUES[@]}"; do
-    echo ""
-    echo "================================================"
-    echo "Running with LR = $lr"
-    echo "================================================"
+# Run experiments for each learning rate in parallel
+# Each GPU runs one learning rate
+pids=()
+for i in "${!LR_VALUES[@]}"; do
+    lr="${LR_VALUES[$i]}"
+    gpu_id=$i
 
-    # Run Manifold Muon
-    echo ""
-    echo "1/2: Manifold Muon (Stiefel)..."
-    python main.py \
-        --update manifold_muon \
-        --epochs $EPOCHS \
-        --lr $lr \
-        --seed $SEED
+    echo "Starting GPU $gpu_id with LR = $lr"
 
-    # Run Spectral Ball
-    echo ""
-    echo "2/2: Spectral Ball..."
-    python main.py \
-        --update spectral_ball \
-        --epochs $EPOCHS \
-        --lr $lr \
-        --seed $SEED
+    # Run both manifold_muon and spectral_ball on the same GPU sequentially, in background
+    (
+        echo "[GPU $gpu_id] Running Manifold Muon with LR = $lr"
+        CUDA_VISIBLE_DEVICES=$gpu_id python main.py \
+            --update manifold_muon \
+            --epochs $EPOCHS \
+            --lr $lr \
+            --seed $SEED
+
+        echo "[GPU $gpu_id] Running Spectral Ball with LR = $lr"
+        CUDA_VISIBLE_DEVICES=$gpu_id python main.py \
+            --update spectral_ball \
+            --epochs $EPOCHS \
+            --lr $lr \
+            --seed $SEED
+
+        echo "[GPU $gpu_id] Completed LR = $lr"
+    ) &
+
+    pids+=($!)
+done
+
+echo ""
+echo "================================================"
+echo "All jobs launched. Waiting for completion..."
+echo "PIDs: ${pids[@]}"
+echo "================================================"
+
+# Wait for all background processes to complete
+for pid in "${pids[@]}"; do
+    wait $pid
+    echo "Process $pid completed"
 done
 
 echo ""
