@@ -156,7 +156,7 @@ def spectral_ball(
     radius_mode: str = "spectral_mup",
     msign_steps: int = 10,
     lambda_tolerance: float = 1e-6,
-    lambda_max_iter: int = 20,
+    lambda_max_iter: int = 40,
 ):
     """Spectral Ball constrained optimization.
 
